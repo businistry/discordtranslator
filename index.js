@@ -14,41 +14,36 @@ const client = new Client({
 const CHANNEL_EN = "1386112174635876485"; // English side
 const CHANNEL_ES = "1438688020818694174"; // Spanish side
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
 
-// 🔁 Translation via OpenRouter: google/gemma-3-27b-it:free
+// 🔁 Translation via DeepL API
 async function translateText(text, targetLang) {
   try {
-    const systemPrompt =
-      targetLang === "es"
-        ? "You are a professional translator. Translate all user messages from English into natural, fluent Spanish, preserving tone and intent. Return ONLY the translated Spanish text, no extra words."
-        : "You are a professional translator. Translate all user messages from Spanish into natural, fluent English, preserving tone and intent. Return ONLY the translated English text, no extra words.";
+    // DeepL language codes: EN, ES, PT-BR, KO
+    const deeplTargetLang = targetLang === "en" ? "EN" : targetLang === "es" ? "ES" : targetLang.toUpperCase();
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "https://1642-translator.bot", // any URL/string is fine
-        "X-Title": "1642 Translator Bot"
-      },
-      body: JSON.stringify({
-        model: "google/gemma-3-27b-it:free",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: text }
-        ],
-        temperature: 0.2
-      })
-    });
+    const response = await fetch(
+      "https://api-free.deepl.com/v2/translate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          auth_key: DEEPL_API_KEY,
+          text: text,
+          target_lang: deeplTargetLang
+        })
+      }
+    );
 
     if (!response.ok) {
-      console.error("OpenRouter error:", await response.text());
+      console.error("DeepL API error:", await response.text());
       return text; // fallback to original text on error
     }
 
     const data = await response.json();
-    const translated = data.choices?.[0]?.message?.content?.trim();
+    const translated = data.translations?.[0]?.text?.trim();
 
     return translated || text;
   } catch (err) {
