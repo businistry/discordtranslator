@@ -15,48 +15,36 @@ const client = new Client({
 const CHANNEL_EN = "1386112174635876485"; // English side
 const CHANNEL_ES = "1438688020818694174"; // Spanish side
 
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
 
-// 🔁 Translation via Google Gemini API
+// 🔁 Translation via DeepL API
 async function translateText(text, targetLang) {
   try {
-    const systemPrompt =
-      targetLang === "es"
-        ? "You are a professional translator. Translate the following text from English into natural, fluent Spanish, preserving tone and intent. Return ONLY the translated Spanish text, no extra words."
-        : "You are a professional translator. Translate the following text from Spanish into natural, fluent English, preserving tone and intent. Return ONLY the translated English text, no extra words.";
+    // DeepL language codes: EN, ES, PT-BR, KO
+    const deeplTargetLang = targetLang === "en" ? "EN" : targetLang === "es" ? "ES" : targetLang.toUpperCase();
 
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent",
+      "https://api-free.deepl.com/v2/translate",
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": GOOGLE_API_KEY
+          "Content-Type": "application/x-www-form-urlencoded",
         },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: `${systemPrompt}\n\nText to translate: ${text}`
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.2
-          }
+        body: new URLSearchParams({
+          auth_key: DEEPL_API_KEY,
+          text: text,
+          target_lang: deeplTargetLang
         })
       }
     );
 
     if (!response.ok) {
-      console.error("Google API error:", await response.text());
+      console.error("DeepL API error:", await response.text());
       return text; // fallback to original text on error
     }
 
     const data = await response.json();
-    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    const translated = data.translations?.[0]?.text?.trim();
 
     return translated || text;
   } catch (err) {
