@@ -15,41 +15,48 @@ const client = new Client({
 const CHANNEL_EN = "1386112174635876485"; // English side
 const CHANNEL_ES = "1438688020818694174"; // Spanish side
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
-// 🔁 Translation via OpenRouter: google/gemma-3-27b-it:free
+// 🔁 Translation via Google Gemini API
 async function translateText(text, targetLang) {
   try {
     const systemPrompt =
       targetLang === "es"
-        ? "You are a professional translator. Translate all user messages from English into natural, fluent Spanish, preserving tone and intent. Return ONLY the translated Spanish text, no extra words."
-        : "You are a professional translator. Translate all user messages from Spanish into natural, fluent English, preserving tone and intent. Return ONLY the translated English text, no extra words.";
+        ? "You are a professional translator. Translate the following text from English into natural, fluent Spanish, preserving tone and intent. Return ONLY the translated Spanish text, no extra words."
+        : "You are a professional translator. Translate the following text from Spanish into natural, fluent English, preserving tone and intent. Return ONLY the translated English text, no extra words.";
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "https://1642-translator.bot", // any URL/string is fine
-        "X-Title": "1642 Translator Bot"
-      },
-      body: JSON.stringify({
-        model: "google/gemma-3-27b-it:free",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: text }
-        ],
-        temperature: 0.2
-      })
-    });
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": GOOGLE_API_KEY
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text: `${systemPrompt}\n\nText to translate: ${text}`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.2
+          }
+        })
+      }
+    );
 
     if (!response.ok) {
-      console.error("OpenRouter error:", await response.text());
+      console.error("Google API error:", await response.text());
       return text; // fallback to original text on error
     }
 
     const data = await response.json();
-    const translated = data.choices?.[0]?.message?.content?.trim();
+    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     return translated || text;
   } catch (err) {
