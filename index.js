@@ -35,20 +35,17 @@ async function translateText(text, targetLang) {
       deeplTargetLang = targetLang.toUpperCase();
     }
 
-    const response = await fetch(
-      "https://api-free.deepl.com/v2/translate",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          auth_key: DEEPL_API_KEY,
-          text: text,
-          target_lang: deeplTargetLang
-        })
-      }
-    );
+    const response = await fetch("https://api-free.deepl.com/v2/translate", {
+      method: "POST",
+      headers: {
+        Authorization: `DeepL-Auth-Key ${DEEPL_API_KEY}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        text: text,
+        target_lang: deeplTargetLang,
+      }),
+    });
 
     if (!response.ok) {
       console.error("DeepL API error:", await response.text());
