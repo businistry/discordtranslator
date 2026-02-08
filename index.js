@@ -105,6 +105,7 @@ client.on("messageCreate", async (message) => {
 
     for (const targetLang of targetLangs) {
       const channelId = channels[targetLang];
+      if (channelId === channel.id) continue; // never post back to source channel
       const targetChannel = await client.channels.fetch(channelId);
       if (!targetChannel?.isTextBased()) continue;
       const translated = await translateText(content, targetLang);
