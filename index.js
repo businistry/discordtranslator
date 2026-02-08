@@ -1,5 +1,5 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, AttachmentBuilder } = require("discord.js");
 
 // Discord client
 const client = new Client({
@@ -80,6 +80,23 @@ async function translateText(text, targetLang) {
   }
 }
 
+// Fetch message attachments as Discord AttachmentBuilder[] for re-sending (media is not translated)
+async function getAttachmentBuilders(attachments) {
+  if (!attachments?.size) return [];
+  const builders = [];
+  for (const att of attachments.values()) {
+    try {
+      const res = await fetch(att.url);
+      if (!res.ok) continue;
+      const buf = Buffer.from(await res.arrayBuffer());
+      builders.push(new AttachmentBuilder(buf, { name: att.name ?? "file" }));
+    } catch (err) {
+      console.error("Failed to fetch attachment:", att.name, err);
+    }
+  }
+  return builders;
+}
+
 client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   for (const [groupName, channels] of Object.entries(CHANNEL_GROUPS)) {
@@ -92,7 +109,9 @@ client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
 
     const { channel, content } = message;
-    if (!content || !content.trim()) return;
+    const hasText = content && content.trim();
+    const hasAttachments = message.attachments?.size > 0;
+    if (!hasText && !hasAttachments) return;
 
     const info = channelIdToGroup[channel.id];
     if (!info) return; // not a translation channel
@@ -103,13 +122,24 @@ client.on("messageCreate", async (message) => {
 
     const username = `**${message.member?.displayName || message.author.username}:**`;
 
+    // Fetch attachments once and forward as-is to all channels (no translation for media)
+    const files = await getAttachmentBuilders(message.attachments);
+
     for (const targetLang of targetLangs) {
       const channelId = channels[targetLang];
       if (channelId === channel.id) continue; // never post back to source channel
       const targetChannel = await client.channels.fetch(channelId);
       if (!targetChannel?.isTextBased()) continue;
-      const translated = await translateText(content, targetLang);
-      await targetChannel.send(`${username} ${translated}`);
+
+      const payload = { files: files.length ? files : undefined };
+      if (hasText) {
+        const translated = await translateText(content.trim(), targetLang);
+        payload.content = `${username} ${translated}`;
+      } else {
+        payload.content = username; // media-only: just the username
+      }
+
+      await targetChannel.send(payload);
     }
   } catch (err) {
     console.error("Error handling message:", err);
