@@ -10,11 +10,29 @@ const client = new Client({
   ],
 });
 
-// Channel IDs (you gave these)
-const CHANNEL_EN = "1386112174635876485"; // English side
-const CHANNEL_ES = "1438688020818694174"; // Spanish side
-const CHANNEL_PT = "1439099425287962695"; // Portuguese side
-const CHANNEL_KO = "1439099375375614063"; // Korean side
+// Channel groups: each group has isolated EN/ES/PT/KO channels
+const CHANNEL_GROUPS = {
+  roundTable: {
+    en: "1386112174635876485",
+    es: "1438688020818694174",
+    pt: "1439099425287962695",
+    ko: "1439099375375614063",
+  },
+  season2Planning: {
+    en: "1386112271733887077",
+    es: "1469916483898315025",
+    pt: "1469916830079516905",
+    ko: "1469916662646968474",
+  },
+};
+
+// Map channel ID → { groupName, lang } for fast lookup
+const channelIdToGroup = {};
+for (const [groupName, channels] of Object.entries(CHANNEL_GROUPS)) {
+  for (const [lang, channelId] of Object.entries(channels)) {
+    channelIdToGroup[channelId] = { groupName, lang };
+  }
+}
 
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
 
@@ -64,119 +82,34 @@ async function translateText(text, targetLang) {
 
 client.once("ready", () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
-  console.log(`➡ English channel: ${CHANNEL_EN}`);
-  console.log(`➡ Spanish channel: ${CHANNEL_ES}`);
-  console.log(`➡ Portuguese channel: ${CHANNEL_PT}`);
-  console.log(`➡ Korean channel: ${CHANNEL_KO}`);
+  for (const [groupName, channels] of Object.entries(CHANNEL_GROUPS)) {
+    console.log(`➡ ${groupName}: EN=${channels.en} ES=${channels.es} PT=${channels.pt} KO=${channels.ko}`);
+  }
 });
 
 client.on("messageCreate", async (message) => {
   try {
-    // Ignore all bot messages (including itself) to avoid loops
     if (message.author.bot) return;
 
     const { channel, content } = message;
     if (!content || !content.trim()) return;
 
+    const info = channelIdToGroup[channel.id];
+    if (!info) return; // not a translation channel
+
+    const { groupName, lang: sourceLang } = info;
+    const channels = CHANNEL_GROUPS[groupName];
+    const targetLangs = ["en", "es", "pt", "ko"].filter((l) => l !== sourceLang);
+
     const username = `**${message.member?.displayName || message.author.username}:**`;
 
-    // Message from ENGLISH channel
-    if (channel.id === CHANNEL_EN) {
-      // Translate to Spanish
-      const esChannel = await client.channels.fetch(CHANNEL_ES);
-      if (esChannel && esChannel.isTextBased()) {
-        const esTranslated = await translateText(content, "es");
-        await esChannel.send(`${username} ${esTranslated}`);
-      }
-      
-      // Translate to Portuguese
-      const ptChannel = await client.channels.fetch(CHANNEL_PT);
-      if (ptChannel && ptChannel.isTextBased()) {
-        const ptTranslated = await translateText(content, "pt");
-        await ptChannel.send(`${username} ${ptTranslated}`);
-      }
-      
-      // Translate to Korean
-      const koChannel = await client.channels.fetch(CHANNEL_KO);
-      if (koChannel && koChannel.isTextBased()) {
-        const koTranslated = await translateText(content, "ko");
-        await koChannel.send(`${username} ${koTranslated}`);
-      }
+    for (const targetLang of targetLangs) {
+      const channelId = channels[targetLang];
+      const targetChannel = await client.channels.fetch(channelId);
+      if (!targetChannel?.isTextBased()) continue;
+      const translated = await translateText(content, targetLang);
+      await targetChannel.send(`${username} ${translated}`);
     }
-
-    // Message from SPANISH channel
-    else if (channel.id === CHANNEL_ES) {
-      // Translate to English
-      const enChannel = await client.channels.fetch(CHANNEL_EN);
-      if (enChannel && enChannel.isTextBased()) {
-        const enTranslated = await translateText(content, "en");
-        await enChannel.send(`${username} ${enTranslated}`);
-      }
-      
-      // Translate to Portuguese
-      const ptChannel = await client.channels.fetch(CHANNEL_PT);
-      if (ptChannel && ptChannel.isTextBased()) {
-        const ptTranslated = await translateText(content, "pt");
-        await ptChannel.send(`${username} ${ptTranslated}`);
-      }
-      
-      // Translate to Korean
-      const koChannel = await client.channels.fetch(CHANNEL_KO);
-      if (koChannel && koChannel.isTextBased()) {
-        const koTranslated = await translateText(content, "ko");
-        await koChannel.send(`${username} ${koTranslated}`);
-      }
-    }
-
-    // Message from PORTUGUESE channel
-    else if (channel.id === CHANNEL_PT) {
-      // Translate to English
-      const enChannel = await client.channels.fetch(CHANNEL_EN);
-      if (enChannel && enChannel.isTextBased()) {
-        const enTranslated = await translateText(content, "en");
-        await enChannel.send(`${username} ${enTranslated}`);
-      }
-      
-      // Translate to Spanish
-      const esChannel = await client.channels.fetch(CHANNEL_ES);
-      if (esChannel && esChannel.isTextBased()) {
-        const esTranslated = await translateText(content, "es");
-        await esChannel.send(`${username} ${esTranslated}`);
-      }
-      
-      // Translate to Korean
-      const koChannel = await client.channels.fetch(CHANNEL_KO);
-      if (koChannel && koChannel.isTextBased()) {
-        const koTranslated = await translateText(content, "ko");
-        await koChannel.send(`${username} ${koTranslated}`);
-      }
-    }
-
-    // Message from KOREAN channel
-    else if (channel.id === CHANNEL_KO) {
-      // Translate to English
-      const enChannel = await client.channels.fetch(CHANNEL_EN);
-      if (enChannel && enChannel.isTextBased()) {
-        const enTranslated = await translateText(content, "en");
-        await enChannel.send(`${username} ${enTranslated}`);
-      }
-      
-      // Translate to Spanish
-      const esChannel = await client.channels.fetch(CHANNEL_ES);
-      if (esChannel && esChannel.isTextBased()) {
-        const esTranslated = await translateText(content, "es");
-        await esChannel.send(`${username} ${esTranslated}`);
-      }
-      
-      // Translate to Portuguese
-      const ptChannel = await client.channels.fetch(CHANNEL_PT);
-      if (ptChannel && ptChannel.isTextBased()) {
-        const ptTranslated = await translateText(content, "pt");
-        await ptChannel.send(`${username} ${ptTranslated}`);
-      }
-    }
-
-    // ignore all other channels
   } catch (err) {
     console.error("Error handling message:", err);
   }
