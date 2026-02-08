@@ -26,11 +26,11 @@ const CHANNEL_GROUPS = {
   },
 };
 
-// Map channel ID → { groupName, lang } for fast lookup
-const channelIdToGroup = {};
-for (const [groupName, channels] of Object.entries(CHANNEL_GROUPS)) {
-  for (const [lang, channelId] of Object.entries(channels)) {
-    channelIdToGroup[channelId] = { groupName, lang };
+// Set of monitored channel IDs
+const monitoredChannels = new Set();
+for (const channels of Object.values(CHANNEL_GROUPS)) {
+  for (const channelId of Object.values(channels)) {
+    monitoredChannels.add(channelId);
   }
 }
 
@@ -67,34 +67,22 @@ async function translateText(text, targetLang) {
 
     if (!response.ok) {
       console.error("DeepL API error:", await response.text());
-      return text; // fallback to original text on error
+      return { text, lang: null }; // fallback to original text on error
     }
 
     const data = await response.json();
-    const translated = data.translations?.[0]?.text?.trim();
+    const translation = data.translations?.[0];
+    const translatedText = translation?.text?.trim();
+    const detectedSourceLang = translation?.detected_source_language;
 
-    return translated || text;
+    return {
+      text: translatedText || text,
+      lang: detectedSourceLang || null
+    };
   } catch (err) {
     console.error("Translation failed:", err);
-    return text; // fallback to original
+    return { text, lang: null }; // fallback to original
   }
-}
-
-// Fetch message attachments as Discord AttachmentBuilder[] for re-sending (media is not translated)
-async function getAttachmentBuilders(attachments) {
-  if (!attachments?.size) return [];
-  const builders = [];
-  for (const att of attachments.values()) {
-    try {
-      const res = await fetch(att.url);
-      if (!res.ok) continue;
-      const buf = Buffer.from(await res.arrayBuffer());
-      builders.push(new AttachmentBuilder(buf, { name: att.name ?? "file" }));
-    } catch (err) {
-      console.error("Failed to fetch attachment:", att.name, err);
-    }
-  }
-  return builders;
 }
 
 client.once("ready", () => {
@@ -107,40 +95,48 @@ client.once("ready", () => {
 client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
+    if (!monitoredChannels.has(message.channel.id)) return;
 
-    const { channel, content } = message;
-    const hasText = content && content.trim();
-    const hasAttachments = message.attachments?.size > 0;
-    if (!hasText && !hasAttachments) return;
+    const { content } = message;
+    if (!content || !content.trim()) return;
 
-    const info = channelIdToGroup[channel.id];
-    if (!info) return; // not a translation channel
+    // Supported languages
+    const langs = ["en", "es", "pt", "ko"];
+    const langNames = {
+      en: "English",
+      es: "Spanish",
+      pt: "Portuguese",
+      ko: "Korean",
+    };
 
-    const { groupName, lang: sourceLang } = info;
-    const channels = CHANNEL_GROUPS[groupName];
-    const targetLangs = ["en", "es", "pt", "ko"].filter((l) => l !== sourceLang);
+    // Trigger all translations
+    const results = await Promise.all(
+      langs.map(async (target) => {
+        const { text, lang } = await translateText(content.trim(), target);
+        return { target, text, sourceLang: lang };
+      })
+    );
 
-    const username = `**${message.member?.displayName || message.author.username}:**`;
+    // Identify source language (use the first valid detection)
+    const detectedSource = results.find((r) => r.sourceLang)?.sourceLang;
 
-    // Fetch attachments once and forward as-is to all channels (no translation for media)
-    const files = await getAttachmentBuilders(message.attachments);
+    // Normalize source key for filtering
+    let sourceKey = detectedSource ? detectedSource.toLowerCase() : null;
+    if (sourceKey && sourceKey.startsWith("pt")) sourceKey = "pt";
 
-    for (const targetLang of targetLangs) {
-      const channelId = channels[targetLang];
-      if (channelId === channel.id) continue; // never post back to source channel
-      const targetChannel = await client.channels.fetch(channelId);
-      if (!targetChannel?.isTextBased()) continue;
+    // Filter out the translation matching the source language
+    // If source detection failed, we might show all, or handle gracefully.
+    // If sourceKey is null, filter returns all (which is fine).
+    const translationsToPost = results.filter((r) => r.target !== sourceKey);
 
-      const payload = { files: files.length ? files : undefined };
-      if (hasText) {
-        const translated = await translateText(content.trim(), targetLang);
-        payload.content = `${username} ${translated}`;
-      } else {
-        payload.content = username; // media-only: just the username
-      }
+    if (translationsToPost.length === 0) return;
 
-      await targetChannel.send(payload);
-    }
+    const lines = translationsToPost.map((t) => {
+      const name = langNames[t.target] || t.target.toUpperCase();
+      return `**${name}:** ${t.text}`;
+    });
+
+    await message.channel.send(lines.join("\n"));
   } catch (err) {
     console.error("Error handling message:", err);
   }
