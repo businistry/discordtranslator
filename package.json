@@ -1,7 +1,7 @@
 {
   "name": "1642-translator-bot",
   "version": "1.0.0",
-  "description": "Discord translator bot for EN <-> ES across two channels",
+  "description": "Discord translator bot for EN/ES/PT/KO Round Table channels",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
