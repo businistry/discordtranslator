@@ -20,13 +20,6 @@ const CHANNEL_GROUPS = {
 };
 
 const LANGS = ["en", "es", "pt", "ko"];
-const LANG_NAMES = {
-  en: "English",
-  es: "Spanish",
-  pt: "Portuguese",
-  ko: "Korean",
-};
-
 const monitoredChannels = new Set();
 for (const channels of Object.values(CHANNEL_GROUPS)) {
   for (const channelId of Object.values(channels)) {
@@ -70,6 +63,10 @@ function buildAttachmentFiles(downloadedImages) {
   return downloadedImages.map((image) => {
     return new AttachmentBuilder(image.buffer, { name: image.name });
   });
+}
+
+function getAuthorName(message) {
+  return message.member?.displayName || message.author.globalName || message.author.username;
 }
 
 async function translateText(text, targetLang) {
@@ -161,8 +158,8 @@ client.on("messageCreate", async (message) => {
         continue;
       }
 
-      const label = LANG_NAMES[translation.lang] || translation.lang.toUpperCase();
-      const content = translation.text ? `**${label}:** ${translation.text}` : undefined;
+      const authorName = getAuthorName(message);
+      const content = translation.text ? `**${authorName}:** ${translation.text}` : `**${authorName}:**`;
       const files = buildAttachmentFiles(downloadedImages);
 
       await targetChannel.send({
