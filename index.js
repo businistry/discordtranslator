@@ -1,5 +1,10 @@
 require("dotenv").config();
-const { Client, GatewayIntentBits, AttachmentBuilder } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  AttachmentBuilder,
+  PermissionFlagsBits,
+} = require("discord.js");
 
 const client = new Client({
   intents: [
@@ -28,6 +33,12 @@ for (const channels of Object.values(CHANNEL_GROUPS)) {
 }
 
 const DEEPL_API_KEY = process.env.DEEPL_API_KEY;
+const REQUIRED_PERMISSIONS = [
+  { name: "ViewChannel", flag: PermissionFlagsBits.ViewChannel },
+  { name: "SendMessages", flag: PermissionFlagsBits.SendMessages },
+  { name: "ReadMessageHistory", flag: PermissionFlagsBits.ReadMessageHistory },
+  { name: "AttachFiles", flag: PermissionFlagsBits.AttachFiles },
+];
 
 function findSourceChannel(channelId) {
   for (const [groupName, channels] of Object.entries(CHANNEL_GROUPS)) {
@@ -67,6 +78,15 @@ function buildAttachmentFiles(downloadedImages) {
 
 function getAuthorName(message) {
   return message.member?.displayName || message.author.globalName || message.author.username;
+}
+
+function getMissingPermissions(channel) {
+  const permissions = channel.permissionsFor(client.user);
+  if (!permissions) return ["unknown permissions"];
+
+  return REQUIRED_PERMISSIONS
+    .filter((permission) => !permissions.has(permission.flag))
+    .map((permission) => permission.name);
 }
 
 async function translateText(text, targetLang) {
@@ -116,10 +136,26 @@ async function translateText(text, targetLang) {
   }
 }
 
-client.once("ready", () => {
+client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
   for (const [groupName, channels] of Object.entries(CHANNEL_GROUPS)) {
     console.log(`${groupName}: EN=${channels.en} ES=${channels.es} PT=${channels.pt} KO=${channels.ko}`);
+
+    for (const [lang, channelId] of Object.entries(channels)) {
+      try {
+        const channel = await client.channels.fetch(channelId);
+        const missingPermissions = channel?.isTextBased() ? getMissingPermissions(channel) : [];
+        if (!channel?.isTextBased()) {
+          console.error(`${groupName}.${lang} ${channelId}: channel is not text-based or cannot be fetched`);
+        } else if (missingPermissions.length > 0) {
+          console.error(`${groupName}.${lang} ${channelId}: missing permissions ${missingPermissions.join(", ")}`);
+        } else {
+          console.log(`${groupName}.${lang} ${channelId}: ready`);
+        }
+      } catch (err) {
+        console.error(`${groupName}.${lang} ${channelId}: failed to fetch channel`, err);
+      }
+    }
   }
 });
 
@@ -152,20 +188,30 @@ client.on("messageCreate", async (message) => {
     );
 
     for (const translation of translations) {
-      const targetChannel = await client.channels.fetch(translation.channelId);
-      if (!targetChannel?.isTextBased()) {
-        console.error(`Target channel is not text-based: ${translation.channelId}`);
-        continue;
+      try {
+        const targetChannel = await client.channels.fetch(translation.channelId);
+        if (!targetChannel?.isTextBased()) {
+          console.error(`Target channel is not text-based: ${translation.channelId}`);
+          continue;
+        }
+
+        const missingPermissions = getMissingPermissions(targetChannel);
+        if (missingPermissions.length > 0) {
+          console.error(`Skipping ${translation.lang} ${translation.channelId}: missing permissions ${missingPermissions.join(", ")}`);
+          continue;
+        }
+
+        const authorName = getAuthorName(message);
+        const content = translation.text ? `**${authorName}:** ${translation.text}` : `**${authorName}:**`;
+        const files = buildAttachmentFiles(downloadedImages);
+
+        await targetChannel.send({
+          content,
+          files,
+        });
+      } catch (err) {
+        console.error(`Failed to send ${translation.lang} relay to ${translation.channelId}:`, err);
       }
-
-      const authorName = getAuthorName(message);
-      const content = translation.text ? `**${authorName}:** ${translation.text}` : `**${authorName}:**`;
-      const files = buildAttachmentFiles(downloadedImages);
-
-      await targetChannel.send({
-        content,
-        files,
-      });
     }
   } catch (err) {
     console.error("Error handling message:", err);
